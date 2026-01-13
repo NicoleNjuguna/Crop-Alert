@@ -1,33 +1,12 @@
-# Core Streamlit Framework
-streamlit==1.29.0
-streamlit-folium==0.15.0
-
-# Machine Learning & Deep Learning
-tensorflow-cpu==2.15.0
-numpy==1.24.3
-pandas==2.1.4
-scikit-learn==1.3.2
-
-# Image Processing
-Pillow==10.1.0
-opencv-python-headless==4.8.1.78
-
-# Data Visualization
-plotly==5.17.0
-matplotlib==3.8.2
-seaborn==0.13.0
-
-# Geospatial & Mapping
-folium==0.15.0
-geopandas==0.14.1
-
-# Web & API Integration
-requests==2.31.0
-urllib3==2.1.0
-
-# Data Processing & Utilities
-scipy==1.11.4
-python-dateutil==2.8.2
+streamlit
+streamlit-folium
+numpy
+pandas
+plotly
+folium
+Pillow
+opencv-python-headless
+tensorflow-cpu
 
 # Optional: For enhanced functionality
 # Uncomment if needed for production deployment
