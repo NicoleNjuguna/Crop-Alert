@@ -26,7 +26,8 @@ warnings.filterwarnings('ignore')
 from utils import (
     load_model, preprocess_image, predict_disease, 
     get_weather_data, calculate_risk_score, 
-    generate_mock_confusion_matrix, generate_classification_report
+    generate_mock_confusion_matrix, generate_classification_report,
+    get_recommendations
 )
 
 # Page Configuration
@@ -180,23 +181,41 @@ def main():
                 fig.update_layout(height=300)
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # Recommendations
-                st.markdown("### 💡 Recommendations")
+                # Detailed Recommendations based on disease class
+                st.markdown("### 💡 Agricultural Recommendations")
+                recommendations = get_recommendations(prediction)
+                
+                # Status header with color coding
                 if prediction == "Healthy":
-                    st.markdown("✅ **Continue current management practices**")
-                    st.markdown("✅ **Monitor regularly for early detection**")
-                elif prediction == "Common_Rust":
-                    st.markdown("🔶 **Apply fungicide treatment immediately**")
-                    st.markdown("🔶 **Improve air circulation in field**")
-                    st.markdown("🔶 **Monitor humidity levels**")
-                elif prediction == "Gray_Leaf_Spot":
-                    st.markdown("🔸 **Remove affected leaves**")
-                    st.markdown("🔸 **Apply targeted fungicide**")
-                    st.markdown("🔸 **Ensure proper field drainage**")
-                else:  # Northern Leaf Blight
-                    st.markdown("🔻 **Immediate intervention required**")
-                    st.markdown("🔻 **Apply systemic fungicide**")
-                    st.markdown("🔻 **Consider resistant varieties for next season**")
+                    st.success(recommendations['status'])
+                elif prediction == "Northern_Leaf_Blight":
+                    st.error(recommendations['status'])
+                else:
+                    st.warning(recommendations['status'])
+                
+                st.markdown(f"**Action Required:** {recommendations['action']}")
+                
+                # Cultural control measures
+                with st.expander("🌾 Cultural Control Measures", expanded=True):
+                    for measure in recommendations['cultural']:
+                        st.markdown(f"- {measure}")
+                
+                # Chemical control measures
+                with st.expander("💊 Chemical Control Recommendations", expanded=True):
+                    for measure in recommendations['chemical']:
+                        st.markdown(f"- {measure}")
+                
+                # Timing information (if available)
+                if 'timing' in recommendations:
+                    with st.expander("⏰ Application Timing", expanded=False):
+                        for timing in recommendations['timing']:
+                            st.markdown(f"- {timing}")
+                
+                # Monitoring guidance (if available)
+                if 'monitoring' in recommendations:
+                    with st.expander("📊 Monitoring Guidelines", expanded=False):
+                        for guide in recommendations['monitoring']:
+                            st.markdown(f"- {guide}")
             else:
                 st.info("Upload and analyze an image to see results here.")
 
@@ -274,10 +293,50 @@ def main():
                 risk_color = "risk-high" if avg_risk > 0.7 else "risk-medium" if avg_risk > 0.4 else "risk-low"
                 st.markdown(f'<div class="metric-card"><div class="{risk_color}">Risk Level: {risk_level}</div></div>', unsafe_allow_html=True)
             
+            # 7-Day Disease Risk Trend Visualization
+            st.subheader("📈 7-Day Disease Risk Trend")
+            
+            # Create time series risk chart
+            risk_fig = go.Figure()
+            
+            # Convert risk score to percentage for display
+            weather_df['risk_percentage'] = weather_df['risk_score'] * 100
+            
+            # Add risk trend line with area fill
+            risk_fig.add_trace(go.Scatter(
+                x=weather_df['date'],
+                y=weather_df['risk_percentage'],
+                mode='lines+markers',
+                name='Disease Risk',
+                line=dict(color='#ff6b6b', width=3),
+                marker=dict(size=8, symbol='circle'),
+                fill='tozeroy',
+                fillcolor='rgba(255, 107, 107, 0.2)'
+            ))
+            
+            # Add risk threshold lines
+            risk_fig.add_hline(y=70, line_dash="dash", line_color="red", 
+                             annotation_text="High Risk Threshold", annotation_position="right")
+            risk_fig.add_hline(y=40, line_dash="dash", line_color="orange", 
+                             annotation_text="Medium Risk Threshold", annotation_position="right")
+            
+            # Update layout
+            risk_fig.update_layout(
+                title="Disease Risk Forecast Over Next 7 Days",
+                xaxis_title="Date",
+                yaxis_title="Risk Score (%)",
+                yaxis=dict(range=[0, 100]),
+                hovermode='x unified',
+                height=400,
+                showlegend=True
+            )
+            
+            st.plotly_chart(risk_fig, use_container_width=True)
+            
             # Interactive charts
             fig = make_subplots(
                 rows=2, cols=2,
-                subplot_titles=("Temperature Trend", "Humidity Levels", "Rainfall Forecast", "Disease Risk Score"),
+                subplot_titles=("Temperature Trend", "Humidity Levels", "Rainfall Forecast", "NDVI Vegetation Health"),
                 specs=[[{"secondary_y": False}, {"secondary_y": False}],
                        [{"secondary_y": False}, {"secondary_y": False}]]
             )
@@ -303,14 +362,15 @@ def main():
                 row=2, col=1
             )
             
-            # Risk Score
-            fig.add_trace(
-                go.Scatter(x=weather_df['date'], y=weather_df['risk_score'], 
-                          name="Risk Score", line=dict(color="orange", width=3)),
-                row=2, col=2
-            )
+            # NDVI (if available in weather_df)
+            if 'ndvi' in weather_df.columns:
+                fig.add_trace(
+                    go.Scatter(x=weather_df['date'], y=weather_df['ndvi'], 
+                              name="NDVI", line=dict(color="green", width=3)),
+                    row=2, col=2
+                )
             
-            fig.update_layout(height=600, showlegend=False, title_text="Weather & Risk Analysis Dashboard")
+            fig.update_layout(height=600, showlegend=False, title_text="Weather & Environmental Analysis Dashboard")
             st.plotly_chart(fig, use_container_width=True)
             
             # Risk recommendations
@@ -511,16 +571,9 @@ def main():
         - Geospatial Analysis & Mapping
         
         **Contact Information:**
-        - 📧 Email: [ml-engineer@maize-alert.com](mailto:ml-engineer@maize-alert.com)
-        - 🐙 GitHub: [github.com/maize-disease-alert](https://github.com/maize-disease-alert)
-        - 📊 Dashboard: [maize-alert.streamlit.app](https://maize-alert.streamlit.app)
-        
-        ### 📝 Version Information
-        - **Version:** 1.0.0
-        - **Last Updated:** January 2026
-        - **License:** MIT License
-        - **Framework:** CRISP-DM Compliant
-        """)
+        - 📧 Email: [nicolenjuguna20@gmail.com](mailto:nicolenjuguna20@gmail.com)
+        - 🐙 GitHub: [github.com/NicoleNjuguna](https://github.com/NicoleNjuguna)
+        - 🌐 Live App: [Crop Alert System](https://crop-alert-mxyrh6x7quccje96ab7mrp.streamlit.app/)
         
         # Disclaimer
         st.warning("""

@@ -713,3 +713,117 @@ def export_results_csv(prediction_history):
         
     except Exception as e:
         return f"Error exporting results: {str(e)}"
+
+def get_recommendations(disease_class):
+    """
+    Get detailed, actionable agricultural recommendations for each disease class.
+    Based on Kenya Agricultural Research Institute (KALRO) guidelines.
+    
+    Args:
+        disease_class (str): Disease class name
+        
+    Returns:
+        dict: Dictionary containing cultural and chemical control recommendations
+    """
+    recommendations = {
+        'Healthy': {
+            'status': '✅ Healthy Crop Detected',
+            'action': 'Continue routine monitoring',
+            'cultural': [
+                '🌱 Maintain current irrigation schedule',
+                '🌱 Continue balanced fertilization program',
+                '🌱 Monitor field weekly for early disease signs',
+                '🌱 Ensure proper field drainage',
+                '🌱 Remove any plant debris regularly'
+            ],
+            'chemical': [
+                '✅ No fungicide application needed at this time',
+                '✅ Keep preventive fungicides on hand for rapid response'
+            ],
+            'monitoring': [
+                '📊 Scout field every 7 days',
+                '📊 Check for changes in leaf color or spots',
+                '📊 Monitor weather forecasts for disease-favorable conditions'
+            ]
+        },
+        'Common_Rust': {
+            'status': '⚠️ Common Rust Detected',
+            'action': 'Immediate intervention required',
+            'cultural': [
+                '🌾 Plant resistant maize varieties (e.g., H614, H626)',
+                '🌾 Remove and destroy intermediate hosts like Oxalis species',
+                '🌾 Improve air circulation by proper plant spacing (75cm x 25cm)',
+                '🌾 Remove infected lower leaves if disease is localized',
+                '🌾 Avoid overhead irrigation to reduce leaf wetness',
+                '🌾 Practice crop rotation with non-host crops (legumes, vegetables)'
+            ],
+            'chemical': [
+                '💊 Apply fungicides if severity exceeds 10% leaf area',
+                '💊 Recommended: Azoxystrobin (e.g., Amistar) at 200ml/ha',
+                '💊 Alternative: Tebuconazole (e.g., Folicur) at 500ml/ha',
+                '💊 Spray interval: Every 14 days or as per label',
+                '💊 Apply early morning or late evening for better coverage',
+                '💊 Rotate fungicide groups to prevent resistance'
+            ],
+            'timing': [
+                '⏰ First spray: At first sign of pustules',
+                '⏰ Follow-up: 14 days after initial application',
+                '⏰ Critical period: Tasseling to grain filling stage'
+            ]
+        },
+        'Northern_Leaf_Blight': {
+            'status': '🔴 Northern Leaf Blight Detected',
+            'action': 'Urgent treatment needed',
+            'cultural': [
+                '🌾 Practice 2-3 year crop rotation with non-cereal crops',
+                '🌾 Use resistant varieties (e.g., DH04, DH06, KCBH1)',
+                '🌾 Deep tillage to bury infected crop residue (20-30cm depth)',
+                '🌾 Burn or remove severely infected plant material',
+                '🌾 Avoid continuous maize cropping in the same field',
+                '🌾 Maintain optimal plant population (53,000-62,000 plants/ha)',
+                '🌾 Apply balanced fertilizer - avoid excess nitrogen'
+            ],
+            'chemical': [
+                '💊 Immediate application: Mancozeb 80% WP at 2kg/ha',
+                '💊 Alternative: Chlorothalonil 720 SC at 1.5L/ha',
+                '💊 Systemic option: Azoxystrobin + Difenoconazole',
+                '💊 Spray interval: 10-14 days depending on disease pressure',
+                '💊 Ensure thorough coverage of upper and lower leaf surfaces',
+                '💊 Mix with sticker/spreader for better adhesion'
+            ],
+            'timing': [
+                '⏰ First spray: At appearance of first lesions',
+                '⏰ Critical sprays: 4-8 weeks after planting',
+                '⏰ Continue until physiological maturity if pressure is high'
+            ]
+        },
+        'Gray_Leaf_Spot': {
+            'status': '⚠️ Gray Leaf Spot Detected',
+            'action': 'Control measures needed',
+            'cultural': [
+                '🌾 Reduce plant population to improve air circulation',
+                '🌾 Avoid excessive nitrogen fertilization',
+                '🌾 Ensure balanced NPK ratio (use soil test recommendations)',
+                '🌾 Practice minimum tillage to bury infected residue',
+                '🌾 Use crop rotation with legumes or vegetables (2+ years)',
+                '🌾 Remove lower infected leaves if caught early',
+                '🌾 Improve field drainage to reduce humidity'
+            ],
+            'chemical': [
+                '💊 Apply at first symptom appearance (small spots)',
+                '💊 Recommended: Azoxystrobin at 200-250ml/ha',
+                '💊 Alternative: Propiconazole at 400ml/ha',
+                '💊 Combination: Azoxystrobin + Tebuconazole for better control',
+                '💊 Spray interval: 14-21 days or after heavy rainfall',
+                '💊 Add wetting agent for better leaf coverage'
+            ],
+            'timing': [
+                '⏰ Start: When first rectangular spots appear',
+                '⏰ Critical period: 6-10 weeks after planting',
+                '⏰ Monitor closely during prolonged wet periods'
+            ]
+        }
+    }
+    
+    # Return recommendations or default if disease not found
+    return recommendations.get(disease_class, recommendations['Healthy'])
