@@ -27,7 +27,7 @@ from utils import (
     load_model, preprocess_image, predict_disease, 
     get_weather_data, calculate_risk_score, 
     generate_mock_confusion_matrix, generate_classification_report,
-    get_recommendations
+    get_recommendations, get_dataset_info, split_dataset
 )
 
 # Page Configuration
@@ -100,7 +100,7 @@ def main():
             st.metric("Response Time", "12s", "-8s")
 
     # Main Navigation
-    tab1, tab2, tab3, tab4 = st.tabs(["🔍 Disease Detection", "⚠️ Risk Assessment", "📈 Model Performance", "ℹ️ About"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🔍 Disease Detection", "⚠️ Risk Assessment", "📈 Model Performance", "📊 Dataset Info", "ℹ️ About"])
 
     # Tab 1: Disease Detection (CRISP-DM: Data Preparation & Modeling)
     with tab1:
@@ -157,29 +157,41 @@ def main():
                 
                 st.info(f"**Confidence:** {confidence:.1%}")
                 
-                # Confidence visualization
+                # Confidence visualization - now reactive to prediction updates
+                # Create a unique key based on prediction to force updates
+                confidence_key = f"confidence_{prediction}_{confidence:.4f}"
+                
                 fig = go.Figure(go.Indicator(
                     mode = "gauge+number",
                     value = confidence * 100,
                     domain = {'x': [0, 1], 'y': [0, 1]},
-                    title = {'text': "Confidence Level (%)"},
+                    title = {'text': "Confidence Level (%)", 'font': {'size': 18}},
+                    number = {'suffix': "%", 'font': {'size': 32}},
                     gauge = {
-                        'axis': {'range': [None, 100]},
-                        'bar': {'color': "darkblue"},
+                        'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
+                        'bar': {'color': "darkblue", 'thickness': 0.3},
+                        'bgcolor': "white",
+                        'borderwidth': 2,
+                        'bordercolor': "gray",
                         'steps': [
-                            {'range': [0, 50], 'color': "lightgray"},
-                            {'range': [50, 80], 'color': "yellow"},
-                            {'range': [80, 100], 'color': "green"}
+                            {'range': [0, 60], 'color': "#ffcccc"},  # Low confidence - red
+                            {'range': [60, 80], 'color': "#fff4cc"},  # Medium - yellow
+                            {'range': [80, 100], 'color': "#ccffcc"}  # High - green
                         ],
                         'threshold': {
                             'line': {'color': "red", 'width': 4},
                             'thickness': 0.75,
-                            'value': 90
+                            'value': 85  # Target confidence threshold
                         }
                     }
                 ))
-                fig.update_layout(height=300)
-                st.plotly_chart(fig, use_container_width=True)
+                fig.update_layout(
+                    height=300,
+                    margin=dict(l=20, r=20, t=40, b=20),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    font={'size': 14}
+                )
+                st.plotly_chart(fig, use_container_width=True, key=confidence_key)
                 
                 # Detailed Recommendations based on disease class
                 st.markdown("### 💡 Agricultural Recommendations")
@@ -468,8 +480,136 @@ def main():
         fig.update_layout(height=400, title_text="Model Performance Over Time")
         st.plotly_chart(fig, use_container_width=True)
 
-    # Tab 4: About (CRISP-DM: Business Understanding)
+    # Tab 4: Dataset Information (NEW)
     with tab4:
+        st.header("📊 Dataset Information & Management")
+        st.markdown("View dataset statistics and perform train/test/validation split.")
+        
+        # Import dataset utilities
+        from utils import get_dataset_info, split_dataset
+        
+        # Dataset overview
+        st.subheader("📁 Dataset Overview")
+        
+        data_path = "Data/data"
+        
+        try:
+            # Get dataset info
+            dataset_df = get_dataset_info(data_path)
+            
+            if len(dataset_df) > 0:
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    st.dataframe(dataset_df, use_container_width=True, hide_index=True)
+                    
+                    # Visualization
+                    fig = px.pie(
+                        dataset_df, 
+                        values='Number of Images', 
+                        names='Disease Class',
+                        title='Dataset Distribution by Disease Class',
+                        color_discrete_sequence=px.colors.qualitative.Set3
+                    )
+                    fig.update_traces(textposition='inside', textinfo='percent+label')
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                with col2:
+                    total_images = dataset_df['Number of Images'].sum()
+                    st.metric("Total Images", f"{total_images:,}")
+                    st.metric("Disease Classes", len(dataset_df))
+                    
+                    avg_per_class = int(total_images / len(dataset_df))
+                    st.metric("Avg per Class", f"{avg_per_class:,}")
+                
+                # Data Split Configuration
+                st.markdown("---")
+                st.subheader("🔀 Train/Test/Validation Split")
+                st.markdown("Configure and execute dataset splitting with stratified sampling.")
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    train_pct = st.slider("Training %", 50, 80, 60, 5)
+                with col2:
+                    test_pct = st.slider("Testing %", 10, 30, 20, 5)
+                with col3:
+                    val_pct = 100 - train_pct - test_pct
+                    st.metric("Validation %", f"{val_pct}%")
+                
+                if train_pct + test_pct > 100:
+                    st.error("⚠️ Train + Test percentages cannot exceed 100%")
+                else:
+                    # Show expected split
+                    st.markdown("#### 📊 Expected Split Distribution")
+                    
+                    split_preview = dataset_df.copy()
+                    split_preview['Train'] = (split_preview['Number of Images'] * train_pct / 100).astype(int)
+                    split_preview['Test'] = (split_preview['Number of Images'] * test_pct / 100).astype(int)
+                    split_preview['Validation'] = split_preview['Number of Images'] - split_preview['Train'] - split_preview['Test']
+                    
+                    st.dataframe(
+                        split_preview[['Disease Class', 'Train', 'Test', 'Validation', 'Number of Images']], 
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                    
+                    # Split button
+                    if st.button("🚀 Execute Dataset Split", type="primary"):
+                        with st.spinner("Splitting dataset..."):
+                            split_stats = split_dataset(
+                                data_dir=data_path,
+                                train_ratio=train_pct/100,
+                                test_ratio=test_pct/100,
+                                val_ratio=val_pct/100
+                            )
+                            
+                            if split_stats:
+                                st.success("✅ Dataset split completed successfully!")
+                                st.balloons()
+                                
+                                # Display results
+                                st.markdown("#### ✅ Split Summary")
+                                
+                                summary_data = []
+                                for disease_class in ['Blight', 'Common_Rust', 'Gray_Leaf_Spot', 'Healthy']:
+                                    if disease_class in split_stats['total']:
+                                        summary_data.append({
+                                            'Class': disease_class,
+                                            'Total': split_stats['total'][disease_class],
+                                            'Train': split_stats['train'][disease_class],
+                                            'Test': split_stats['test'][disease_class],
+                                            'Validation': split_stats['validation'][disease_class]
+                                        })
+                                
+                                summary_df = pd.DataFrame(summary_data)
+                                st.dataframe(summary_df, use_container_width=True, hide_index=True)
+                            else:
+                                st.error("❌ Error during dataset split. Check console for details.")
+                
+                # Data Quality Information
+                st.markdown("---")
+                st.subheader("📋 Data Preparation Notes")
+                st.info("""
+                **Dataset Split Strategy:**
+                - **60% Training:** Used to train the CNN model on disease patterns
+                - **20% Testing:** Evaluates model performance on unseen data
+                - **20% Validation:** Final validation before deployment
+                
+                **Stratified Splitting:** Maintains class distribution across all splits to ensure balanced training.
+                
+                **Recommended Split:** 60/20/20 is the industry standard for deep learning projects.
+                """)
+            
+            else:
+                st.warning("⚠️ No dataset found. Please ensure images are in: `Data/data/[Blight|Common_Rust|Gray_Leaf_Spot|Healthy]/`")
+        
+        except Exception as e:
+            st.error(f"Error loading dataset information: {str(e)}")
+            st.info("Expected directory structure:\n```\nData/data/\n  ├── Blight/\n  ├── Common_Rust/\n  ├── Gray_Leaf_Spot/\n  └── Healthy/\n```")
+
+    # Tab 5: About (CRISP-DM: Business Understanding)
+    with tab5:
         st.header("About the Maize Disease Alert System")
         
         # Project overview

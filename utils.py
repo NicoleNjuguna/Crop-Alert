@@ -714,6 +714,167 @@ def export_results_csv(prediction_history):
     except Exception as e:
         return f"Error exporting results: {str(e)}"
 
+def split_dataset(data_dir, output_dir=None, train_ratio=0.6, test_ratio=0.2, val_ratio=0.2, seed=42):
+    """
+    Split dataset into training, testing, and validation sets.
+    Maintains class distribution across all splits (stratified splitting).
+    
+    Args:
+        data_dir (str): Path to directory containing class folders (Blight, Common_Rust, etc.)
+        output_dir (str, optional): Path to output directory. If None, creates splits in place.
+        train_ratio (float): Proportion for training set (default: 0.6 = 60%)
+        test_ratio (float): Proportion for testing set (default: 0.2 = 20%)
+        val_ratio (float): Proportion for validation set (default: 0.2 = 20%)
+        seed (int): Random seed for reproducibility
+        
+    Returns:
+        dict: Dictionary containing file paths for each split and statistics
+    """
+    import os
+    import shutil
+    from pathlib import Path
+    
+    try:
+        # Validate ratios
+        if not np.isclose(train_ratio + test_ratio + val_ratio, 1.0):
+            raise ValueError(f"Ratios must sum to 1.0. Got {train_ratio + test_ratio + val_ratio}")
+        
+        # Set random seed
+        np.random.seed(seed)
+        random.seed(seed)
+        
+        # Get class folders
+        disease_classes = ['Blight', 'Common_Rust', 'Gray_Leaf_Spot', 'Healthy']
+        
+        split_stats = {
+            'train': {},
+            'test': {},
+            'validation': {},
+            'total': {}
+        }
+        
+        # Process each class
+        for disease_class in disease_classes:
+            class_path = Path(data_dir) / disease_class
+            
+            if not class_path.exists():
+                print(f"Warning: Class folder '{disease_class}' not found at {class_path}")
+                continue
+            
+            # Get all image files
+            image_files = []
+            for ext in ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']:
+                image_files.extend(list(class_path.glob(ext)))
+            
+            if len(image_files) == 0:
+                print(f"Warning: No images found in {class_path}")
+                continue
+            
+            # Shuffle files
+            np.random.shuffle(image_files)
+            
+            # Calculate split indices
+            n_total = len(image_files)
+            n_train = int(n_total * train_ratio)
+            n_test = int(n_total * test_ratio)
+            n_val = n_total - n_train - n_test  # Remaining goes to validation
+            
+            # Split files
+            train_files = image_files[:n_train]
+            test_files = image_files[n_train:n_train + n_test]
+            val_files = image_files[n_train + n_test:]
+            
+            # Store statistics
+            split_stats['train'][disease_class] = len(train_files)
+            split_stats['test'][disease_class] = len(test_files)
+            split_stats['validation'][disease_class] = len(val_files)
+            split_stats['total'][disease_class] = n_total
+            
+            # If output directory specified, copy files to new structure
+            if output_dir:
+                output_path = Path(output_dir)
+                
+                for split_name, file_list in [('train', train_files), 
+                                               ('test', test_files), 
+                                               ('validation', val_files)]:
+                    split_dir = output_path / split_name / disease_class
+                    split_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    for file_path in file_list:
+                        shutil.copy2(file_path, split_dir / file_path.name)
+        
+        # Generate summary report
+        print("\n" + "="*60)
+        print("DATASET SPLIT SUMMARY")
+        print("="*60)
+        print(f"Split Ratios: Train={train_ratio:.0%}, Test={test_ratio:.0%}, Val={val_ratio:.0%}")
+        print(f"Random Seed: {seed}\n")
+        
+        for disease_class in disease_classes:
+            if disease_class in split_stats['total']:
+                total = split_stats['total'][disease_class]
+                train = split_stats['train'].get(disease_class, 0)
+                test = split_stats['test'].get(disease_class, 0)
+                val = split_stats['validation'].get(disease_class, 0)
+                
+                print(f"{disease_class:20} | Total: {total:4} | Train: {train:4} ({train/total:.0%}) | "
+                      f"Test: {test:4} ({test/total:.0%}) | Val: {val:4} ({val/total:.0%})")
+        
+        # Overall statistics
+        total_all = sum(split_stats['total'].values())
+        train_all = sum(split_stats['train'].values())
+        test_all = sum(split_stats['test'].values())
+        val_all = sum(split_stats['validation'].values())
+        
+        print("\n" + "-"*60)
+        print(f"{'TOTAL':20} | Total: {total_all:4} | Train: {train_all:4} ({train_all/total_all:.0%}) | "
+              f"Test: {test_all:4} ({test_all/total_all:.0%}) | Val: {val_all:4} ({val_all/total_all:.0%})")
+        print("="*60 + "\n")
+        
+        return split_stats
+        
+    except Exception as e:
+        print(f"Error splitting dataset: {str(e)}")
+        return None
+
+def get_dataset_info(data_dir):
+    """
+    Get information about the dataset structure and image counts.
+    
+    Args:
+        data_dir (str): Path to directory containing class folders
+        
+    Returns:
+        pd.DataFrame: DataFrame with class names and image counts
+    """
+    from pathlib import Path
+    
+    disease_classes = ['Blight', 'Common_Rust', 'Gray_Leaf_Spot', 'Healthy']
+    data = []
+    
+    for disease_class in disease_classes:
+        class_path = Path(data_dir) / disease_class
+        
+        if class_path.exists():
+            # Count images
+            image_count = 0
+            for ext in ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']:
+                image_count += len(list(class_path.glob(ext)))
+            
+            data.append({
+                'Disease Class': disease_class,
+                'Number of Images': image_count,
+                'Percentage': 0  # Will calculate after
+            })
+    
+    df = pd.DataFrame(data)
+    
+    if len(df) > 0:
+        total = df['Number of Images'].sum()
+        df['Percentage'] = (df['Number of Images'] / total * 100).round(1)
+    
+    return df
+
 def get_recommendations(disease_class):
     """
     Get detailed, actionable agricultural recommendations for each disease class.
