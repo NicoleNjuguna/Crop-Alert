@@ -130,9 +130,8 @@ def main():
                             if st.session_state.model is None:
                                 st.session_state.model = load_model()
                             
-                            # Preprocess and predict
-                            processed_image = preprocess_image(image)
-                            prediction, confidence = predict_disease(st.session_state.model, processed_image)
+                            # Predict with TTA enabled (passing PIL image directly)
+                            prediction, confidence = predict_disease(st.session_state.model, image, use_tta=True)
                             
                             # Store results in session state
                             st.session_state.prediction = prediction

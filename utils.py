@@ -13,6 +13,7 @@ from PIL import Image, ImageEnhance
 import cv2
 from datetime import datetime, timedelta
 import random
+import os
 import streamlit as st
 from io import BytesIO
 import tensorflow as tf
@@ -141,10 +142,17 @@ def load_model():
             metrics=['accuracy']
         )
         
-        # Load trained weights or initialize deterministic pseudo-weights
-        # In production: model.load_weights("weights/maize_effnetv2.h5")
-        # For demo: Initialize weights to produce meaningful, realistic predictions
-        _initialize_trained_weights(model)
+        # Load trained weights
+        # Option 1: Load from file (for production)
+        weights_path = "weights/maize_effnetv2.h5"
+        if os.path.exists(weights_path):
+            model.load_weights(weights_path)
+            print(f"✅ Loaded trained weights from {weights_path}")
+        else:
+            # Option 2: Use pseudo-weights for demo (if no trained weights available)
+            print("⚠️ No trained weights found. Using pseudo-weights for demonstration.")
+            print(f"   Place your trained model at: {weights_path}")
+            _initialize_trained_weights(model)
         
         return model
         
