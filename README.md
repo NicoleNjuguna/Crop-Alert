@@ -11,9 +11,9 @@
 
 The **Maize Disease Alert System** is a comprehensive, AI-driven platform designed to provide early detection and risk forecasting for maize crop diseases across Kenya. Built following the **CRISP-DM framework**, this system combines computer vision, meteorological data analysis, and geospatial intelligence to empower farmers with actionable insights for crop protection.
 
-### 🚀 Key Features
+### Key Features
 
-- **🔬 AI Disease Detection**: Real-time classification of 4 major maize diseases using CNN
+- **🔬 Disease Detection**: Real-time classification of 4 major maize diseases using CNN
 - **⚠️ Risk Forecasting**: 7-day disease risk predictions based on weather conditions
 - **🗺️ Geospatial Intelligence**: Interactive risk maps for Kenyan counties
 - **📊 Performance Analytics**: Comprehensive model evaluation and monitoring
