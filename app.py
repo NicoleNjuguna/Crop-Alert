@@ -714,6 +714,7 @@ def main():
         - 📧 Email: [nicolenjuguna20@gmail.com](mailto:nicolenjuguna20@gmail.com)
         - 🐙 GitHub: [github.com/NicoleNjuguna](https://github.com/NicoleNjuguna)
         - 🌐 Live App: [Crop Alert System](https://crop-alert-mxyrh6x7quccje96ab7mrp.streamlit.app/)
+        """)
         
         # Disclaimer
         st.warning("""
