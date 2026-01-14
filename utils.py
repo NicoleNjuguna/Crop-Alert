@@ -9,15 +9,15 @@ Date: January 2026
 
 import numpy as np
 import pandas as pd
-from PIL import Image
+from PIL import Image, ImageEnhance
 import cv2
 from datetime import datetime, timedelta
 import random
 import streamlit as st
 from io import BytesIO
 import tensorflow as tf
-from tensorflow.keras.applications import MobileNetV2
-from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout
+from tensorflow.keras.applications import EfficientNetV2B0
+from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout, BatchNormalization
 from tensorflow.keras.models import Model
 from tensorflow.keras.preprocessing.image import img_to_array
 import warnings
@@ -46,43 +46,52 @@ KENYAN_COUNTIES = {
 @st.cache_resource
 def load_model():
     """
-    Load and compile the MobileNetV2-based CNN model for disease classification.
+    Load and compile the EfficientNetV2B0-based CNN model for disease classification.
+    Uses advanced architecture with fine-tuning for improved accuracy.
     Uses caching to ensure model is loaded only once per session.
     
     Returns:
         tf.keras.Model: Compiled CNN model for disease prediction
     """
     try:
-        # Create base MobileNetV2 model
-        base_model = MobileNetV2(
+        # Create base EfficientNetV2B0 model (more accurate than MobileNetV2)
+        base_model = EfficientNetV2B0(
             input_shape=(224, 224, 3),
             include_top=False,
             weights='imagenet'
         )
         
-        # Freeze base model layers
-        base_model.trainable = False
+        # Fine-tuning strategy: Unfreeze top layers for better domain adaptation
+        # Freeze first 80% of layers, fine-tune top 20%
+        base_model.trainable = True
+        freeze_until = int(len(base_model.layers) * 0.8)
+        for layer in base_model.layers[:freeze_until]:
+            layer.trainable = False
         
-        # Add custom classification head
+        # Add enhanced classification head with batch normalization
         x = base_model.output
-        x = GlobalAveragePooling2D()(x)
+        x = GlobalAveragePooling2D(name='avg_pool')(x)
+        x = BatchNormalization()(x)
         x = Dropout(0.3)(x)
-        x = Dense(128, activation='relu')(x)
+        x = Dense(256, activation='relu', name='dense_1')(x)
+        x = BatchNormalization()(x)
         x = Dropout(0.2)(x)
-        predictions = Dense(4, activation='softmax')(x)  # 4 disease classes
+        x = Dense(128, activation='relu', name='dense_2')(x)
+        x = Dropout(0.1)(x)
+        predictions = Dense(4, activation='softmax', name='predictions')(x)  # 4 disease classes
         
         # Create final model
         model = Model(inputs=base_model.input, outputs=predictions)
         
-        # Compile model
+        # Compile model with lower learning rate for fine-tuning
         model.compile(
-            optimizer='adam',
+            optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
             loss='categorical_crossentropy',
             metrics=['accuracy']
         )
         
         # Initialize with random weights (simulating trained model)
-        # In production, this would load actual trained weights
+        # In production, this would load actual trained weights from .h5 file
         dummy_input = np.random.random((1, 224, 224, 3))
         _ = model.predict(dummy_input, verbose=0)
         
@@ -92,13 +101,14 @@ def load_model():
         st.error(f"Error loading model: {str(e)}")
         return None
 
-def preprocess_image(image):
+def preprocess_image(image, augment=False):
     """
-    Preprocess uploaded image for CNN inference.
+    Preprocess uploaded image for CNN inference with optional augmentation.
     Resizes to 224x224x3 and normalizes pixel values.
     
     Args:
         image (PIL.Image): Raw uploaded image
+        augment (bool): Whether to apply augmentation (for TTA)
         
     Returns:
         np.ndarray: Preprocessed image array ready for model input
@@ -108,7 +118,17 @@ def preprocess_image(image):
         if image.mode != 'RGB':
             image = image.convert('RGB')
         
-        # Resize image to model input size
+        # Apply augmentation if requested (for Test-Time Augmentation)
+        if augment:
+            # Random brightness adjustment
+            enhancer = ImageEnhance.Brightness(image)
+            image = enhancer.enhance(np.random.uniform(0.9, 1.1))
+            
+            # Random contrast adjustment
+            enhancer = ImageEnhance.Contrast(image)
+            image = enhancer.enhance(np.random.uniform(0.9, 1.1))
+        
+        # Resize image to model input size with high-quality resampling
         image_resized = image.resize((224, 224), Image.Resampling.LANCZOS)
         
         # Convert to numpy array
@@ -125,13 +145,47 @@ def preprocess_image(image):
     except Exception as e:
         raise Exception(f"Image preprocessing failed: {str(e)}")
 
-def predict_disease(model, processed_image):
+def preprocess_image_with_tta(image, num_augmentations=5):
+    """
+    Generate multiple augmented versions of an image for Test-Time Augmentation.
+    TTA improves prediction robustness by averaging predictions across variations.
+    
+    Args:
+        image (PIL.Image): Raw uploaded image
+        num_augmentations (int): Number of augmented versions to generate
+        
+    Returns:
+        list: List of preprocessed image arrays
+    """
+    try:
+        augmented_images = []
+        
+        # Original image
+        augmented_images.append(preprocess_image(image, augment=False))
+        
+        # Horizontal flip
+        flipped = image.transpose(Image.FLIP_LEFT_RIGHT)
+        augmented_images.append(preprocess_image(flipped, augment=False))
+        
+        # Generate additional augmented versions
+        for _ in range(num_augmentations - 2):
+            augmented_images.append(preprocess_image(image, augment=True))
+        
+        return augmented_images
+        
+    except Exception as e:
+        # Return just the original if augmentation fails
+        return [preprocess_image(image, augment=False)]
+
+def predict_disease(model, processed_image, use_tta=True):
     """
     Predict disease class and confidence using trained CNN model.
+    Implements Test-Time Augmentation (TTA) for improved accuracy.
     
     Args:
         model (tf.keras.Model): Trained disease classification model
-        processed_image (np.ndarray): Preprocessed image array
+        processed_image (np.ndarray or PIL.Image): Preprocessed image array or PIL image
+        use_tta (bool): Whether to use Test-Time Augmentation (default: True)
         
     Returns:
         tuple: (predicted_class_name, confidence_score)
@@ -140,12 +194,29 @@ def predict_disease(model, processed_image):
         if model is None:
             raise Exception("Model not loaded properly")
         
-        # Get model predictions
-        predictions = model.predict(processed_image, verbose=0)
+        # If TTA is enabled and we have a PIL image, use ensemble prediction
+        if use_tta and isinstance(processed_image, Image.Image):
+            # Generate augmented versions
+            augmented_images = preprocess_image_with_tta(processed_image, num_augmentations=5)
+            
+            # Get predictions for all augmented images
+            all_predictions = []
+            for aug_img in augmented_images:
+                pred = model.predict(aug_img, verbose=0)
+                all_predictions.append(pred[0])
+            
+            # Average predictions across all augmentations (ensemble)
+            predictions = np.mean(all_predictions, axis=0)
+            
+        else:
+            # Standard single prediction
+            if isinstance(processed_image, Image.Image):
+                processed_image = preprocess_image(processed_image, augment=False)
+            predictions = model.predict(processed_image, verbose=0)[0]
         
         # Get predicted class and confidence
-        predicted_class_idx = np.argmax(predictions[0])
-        confidence = np.max(predictions[0])
+        predicted_class_idx = np.argmax(predictions)
+        confidence = np.max(predictions)
         
         # Map class index to disease name
         predicted_class = DISEASE_CLASSES[predicted_class_idx]
@@ -213,14 +284,18 @@ def get_weather_data(county, days=7):
             humidity = max(30, min(95, base_humidity + humidity_adj + daily_humid_var))
             rainfall = max(0, base_rainfall + rainfall_adj + daily_rain_var)
             
-            # Calculate risk score
-            risk_score = calculate_risk_score(temperature, humidity, rainfall)
+            # Calculate NDVI for vegetation health
+            ndvi = calculate_ndvi_simulation(county, date)
+            
+            # Calculate enhanced risk score with NDVI integration
+            risk_score = calculate_risk_score(temperature, humidity, rainfall, ndvi, county, date)
             
             weather_data.append({
                 'date': date,
                 'temperature': round(temperature, 1),
                 'humidity': round(humidity, 1),
                 'rainfall': round(rainfall, 1),
+                'ndvi': round(ndvi, 3),
                 'risk_score': round(risk_score, 3)
             })
         
@@ -240,15 +315,19 @@ def get_weather_data(county, days=7):
             })
         return pd.DataFrame(default_data)
 
-def calculate_risk_score(temperature, humidity, rainfall):
+def calculate_risk_score(temperature, humidity, rainfall, ndvi=None, county=None, date=None):
     """
     Calculate fungal disease risk score based on environmental conditions.
+    Enhanced with NDVI integration for vegetation health assessment.
     Uses agricultural research-based thresholds for maize diseases.
     
     Args:
         temperature (float): Temperature in Celsius
         humidity (float): Relative humidity percentage
         rainfall (float): Rainfall in millimeters
+        ndvi (float, optional): Vegetation health index [0-1]. If None, will be simulated.
+        county (str, optional): County name for NDVI simulation
+        date (datetime, optional): Date for NDVI simulation
         
     Returns:
         float: Risk score between 0.0 (low risk) and 1.0 (high risk)
@@ -258,38 +337,61 @@ def calculate_risk_score(temperature, humidity, rainfall):
         
         # Temperature risk (optimal fungal growth: 20-30°C)
         if 20 <= temperature <= 30:
-            temp_risk = 0.4
+            temp_risk = 0.35
         elif 15 <= temperature < 20 or 30 < temperature <= 35:
-            temp_risk = 0.2
+            temp_risk = 0.18
         else:
-            temp_risk = 0.1
+            temp_risk = 0.08
         
         # Humidity risk (high risk above 70%)
         if humidity >= 80:
-            humid_risk = 0.4
+            humid_risk = 0.35
         elif humidity >= 70:
-            humid_risk = 0.3
+            humid_risk = 0.25
         elif humidity >= 60:
-            humid_risk = 0.2
+            humid_risk = 0.15
         else:
-            humid_risk = 0.1
+            humid_risk = 0.08
         
         # Rainfall risk (promotes spore spread and creates moisture)
         if rainfall >= 5.0:
-            rain_risk = 0.2
+            rain_risk = 0.18
         elif rainfall >= 2.0:
-            rain_risk = 0.15
+            rain_risk = 0.12
         elif rainfall >= 0.5:
-            rain_risk = 0.1
+            rain_risk = 0.08
         else:
-            rain_risk = 0.05
+            rain_risk = 0.04
         
-        # Combine risk factors
-        risk_score = temp_risk + humid_risk + rain_risk
+        # NDVI-based vegetation health risk (NEW FEATURE)
+        # Low NDVI = stressed/unhealthy plants = higher disease susceptibility
+        if ndvi is None and county and date:
+            ndvi = calculate_ndvi_simulation(county, date)
         
-        # Apply synergistic effects
+        if ndvi is not None:
+            if ndvi < 0.3:  # Very poor vegetation health
+                ndvi_risk = 0.20
+            elif ndvi < 0.5:  # Poor to moderate health
+                ndvi_risk = 0.12
+            elif ndvi < 0.7:  # Moderate to good health
+                ndvi_risk = 0.06
+            else:  # Healthy vegetation
+                ndvi_risk = 0.02
+        else:
+            ndvi_risk = 0.08  # Default moderate risk if NDVI unavailable
+        
+        # Combine risk factors with weights
+        risk_score = temp_risk + humid_risk + rain_risk + ndvi_risk
+        
+        # Apply synergistic effects (multiple risk factors present)
         if humidity >= 75 and temperature >= 22 and rainfall >= 1.0:
-            risk_score *= 1.2  # Compound effect
+            risk_score *= 1.25  # Strong compound effect
+        elif humidity >= 70 and temperature >= 20:
+            risk_score *= 1.15  # Moderate compound effect
+        
+        # Additional penalty for stressed vegetation in high-risk conditions
+        if ndvi is not None and ndvi < 0.5 and humidity >= 75:
+            risk_score *= 1.15  # Stressed plants + high humidity = higher risk
         
         # Normalize to [0, 1] range
         risk_score = min(1.0, max(0.0, risk_score))
